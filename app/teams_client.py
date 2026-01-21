@@ -11,8 +11,28 @@ class TeamsClient:
         if not self.webhook:
             return False
         payload = {"text": text}
-        resp = requests.post(self.webhook, json=payload, timeout=10)
-        return resp.status_code == 200 or resp.status_code == 201
+        try:
+            resp = requests.post(self.webhook, json=payload, timeout=10)
+            return resp.status_code in (200, 201)
+        except requests.exceptions.RequestException as e:
+            # If DNS resolution failed, try resolving via socket and retry with IP + Host header
+            try:
+                import socket
+                from urllib.parse import urlparse
+                parsed = urlparse(self.webhook)
+                host = parsed.hostname
+                path = parsed.path or "/"
+                # try to resolve A records
+                infos = socket.getaddrinfo(host, parsed.port or 443, family=socket.AF_INET)
+                if not infos:
+                    return False
+                ip = infos[0][4][0]
+                url_ip = f"{parsed.scheme}://{ip}{path}"
+                headers = {"Host": host}
+                resp = requests.post(url_ip, json=payload, headers=headers, timeout=10, verify=False)
+                return resp.status_code in (200, 201)
+            except Exception:
+                return False
 
     def send_adaptive_card(self, approval_id: int, title: str, owner: str, repo: str, host: str = None, port: str = None):
         """Send an Adaptive Card with Approve/Deny buttons linking back to this service."""
@@ -45,6 +65,60 @@ class TeamsClient:
                 {"type": "Action.OpenUrl", "title": "Approve", "url": approve_url},
                 {"type": "Action.OpenUrl", "title": "Deny", "url": deny_url}
             ]
+        }
+
+        payload = {
+            "type": "message",
+            "attachments": [
+                {"contentType": "application/vnd.microsoft.card.adaptive", "content": card_content}
+            ]
+        }
+        try:
+            resp = requests.post(self.webhook, json=payload, timeout=10)
+            return resp.status_code in (200, 201)
+        except Exception:
+            return False
+
+    def send_awx_notification_card(self, template: str, project: str, job_id: int, status: str, suggestions: str, llm_summary: str, output_url: str, approve_url: str = None, create_issue_url: str = None):
+        """Send an Adaptive Card summarizing an AWX job with actions.
+
+        - `output_url`: link to view full stdout
+        - `approve_url`: optional link to request approval (internal)
+        - `create_issue_url`: optional link to create an issue (GitHub)
+        """
+        if not self.webhook:
+            return False
+
+        facts = []
+        if template:
+            facts.append({"title": "Template", "value": template})
+        if project:
+            facts.append({"title": "Project", "value": project})
+        facts.append({"title": "Job ID", "value": str(job_id)})
+        facts.append({"title": "Status", "value": status or "unknown"})
+        if suggestions:
+            # keep suggestions short
+            facts.append({"title": "Suggestions", "value": suggestions[:800]})
+        if llm_summary:
+            facts.append({"title": "LLM Summary", "value": llm_summary[:800]})
+
+        actions = []
+        if output_url:
+            actions.append({"type": "Action.OpenUrl", "title": "View Output", "url": output_url})
+        if create_issue_url:
+            actions.append({"type": "Action.OpenUrl", "title": "Open GH issue", "url": create_issue_url})
+        if approve_url:
+            actions.append({"type": "Action.OpenUrl", "title": "Request Approval", "url": approve_url})
+
+        card_content = {
+            "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+            "type": "AdaptiveCard",
+            "version": "1.4",
+            "body": [
+                {"type": "TextBlock", "size": "Medium", "weight": "Bolder", "text": f"AWX Job {job_id} - {status}"},
+                {"type": "FactSet", "facts": facts}
+            ],
+            "actions": actions
         }
 
         payload = {

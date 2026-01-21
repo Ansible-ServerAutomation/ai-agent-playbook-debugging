@@ -1,4 +1,5 @@
 import requests
+import os
 
 class AWXClient:
     def __init__(self, base_url: str, token: str):
@@ -12,10 +13,31 @@ class AWXClient:
         if not self.base_url:
             return None
         url = f"{self.base_url}/api/v2/jobs/{job_id}/job_events/"
-        resp = requests.get(url, headers=self._headers(), timeout=15)
-        if resp.status_code != 200:
+        # honor AWX_VERIFY env var (default true) and AWX_TIMEOUT
+        verify = os.getenv("AWX_VERIFY", "true").lower() not in ("0", "false", "no")
+        timeout = float(os.getenv("AWX_TIMEOUT", "10"))
+        try:
+            resp = requests.get(url, headers=self._headers(), timeout=timeout, verify=verify)
+        except Exception as e:
+            try:
+                print(f"AWXClient.get_job_events: request error for {url}: {e}")
+            except Exception:
+                pass
             return None
-        return resp.json()
+        if resp.status_code != 200:
+            try:
+                print(f"AWXClient.get_job_events: non-200 status {resp.status_code} for {url}: {resp.text[:500]}")
+            except Exception:
+                pass
+            return None
+        try:
+            return resp.json()
+        except Exception as e:
+            try:
+                print(f"AWXClient.get_job_events: failed to parse JSON response for {url}: {e}")
+            except Exception:
+                pass
+            return None
 
     def get_job_stdout(self, job_id: int):
         """Assemble human-readable stdout from AWX job events."""
@@ -39,3 +61,33 @@ class AWXClient:
         if not parts:
             return None
         return "\n".join(parts)
+
+    def get_job(self, job_id: int):
+        """Fetch job metadata from AWX (/api/v2/jobs/{id}/)."""
+        if not self.base_url:
+            return None
+        url = f"{self.base_url}/api/v2/jobs/{job_id}/"
+        verify = os.getenv("AWX_VERIFY", "true").lower() not in ("0", "false", "no")
+        timeout = float(os.getenv("AWX_TIMEOUT", "10"))
+        try:
+            resp = requests.get(url, headers=self._headers(), timeout=timeout, verify=verify)
+        except Exception as e:
+            try:
+                print(f"AWXClient.get_job: request error for {url}: {e}")
+            except Exception:
+                pass
+            return None
+        if resp.status_code != 200:
+            try:
+                print(f"AWXClient.get_job: non-200 status {resp.status_code} for {url}: {resp.text[:500]}")
+            except Exception:
+                pass
+            return None
+        try:
+            return resp.json()
+        except Exception as e:
+            try:
+                print(f"AWXClient.get_job: failed to parse JSON response for {url}: {e}")
+            except Exception:
+                pass
+            return None
