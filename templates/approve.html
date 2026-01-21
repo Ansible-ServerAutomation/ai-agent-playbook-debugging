@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Approval {{ approval_id }}</title>
+  </head>
+  <body>
+    <h2>Approval request ID: {{ approval_id }}</h2>
+    <p>Action: {{ action }}</p>
+    <form action="/approve" method="get">
+      <input type="hidden" name="approval_id" value="{{ approval_id }}" />
+      <input type="hidden" name="action" value="approve" />
+      {% if sig %}
+      <input type="hidden" name="sig" value="{{ sig }}" />
+      {% endif %}
+      <button type="submit">Approve</button>
+    </form>
+    <form action="/approve" method="get">
+      <input type="hidden" name="approval_id" value="{{ approval_id }}" />
+      <input type="hidden" name="action" value="deny" />
+      {% if sig %}
+      <input type="hidden" name="sig" value="{{ sig }}" />
+      {% endif %}
+      <button type="submit">Deny</button>
+    </form>
+  </body>
+</html>

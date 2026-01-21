@@ -1,0 +1,43 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environments
+.env
+.env.*
+.venv/
+venv/
+pip-wheel-metadata/
+*.egg-info/
+dist/
+build/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.sublime-project
+*.sublime-workspace
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Testing
+.pytest_cache/
+
+# Database
+*.db
+
+# Docker
+docker-compose.override.yml
+
+# Logs
+*.log
+
+# Keys & certs
+*.pem
+*.key
+*.crt
+credentials
+aws_credentials
