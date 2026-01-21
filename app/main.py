@@ -65,6 +65,57 @@ def get_awx_job(job_id: int):
     return job
 
 
+@app.post("/awx/webhook")
+async def awx_webhook(request: Request, background_tasks: BackgroundTasks):
+    """Receive AWX webhook payloads, assemble job stdout, run analyzer/LLM, and notify Teams.
+
+    Expected AWX webhook JSON should include at least one of: `id`, `job.id`, or `job_id`.
+    If `status` is present we'll include it in the notification.
+    """
+    payload = await request.json()
+    # extract job id from common locations
+    job_id = payload.get("id") or (payload.get("job") and payload["job"].get("id")) or payload.get("job_id")
+    if not job_id:
+        raise HTTPException(status_code=400, detail="Missing job id in payload")
+
+    status = payload.get("status") or payload.get("job_status")
+
+    awx = AWXClient(os.getenv("AWX_URL"), os.getenv("AWX_TOKEN"))
+    teams = TeamsClient(os.getenv("TEAMS_WEBHOOK_URL"))
+
+    # assemble stdout
+    stdout = awx.get_job_stdout(job_id) or ""
+
+    # quick analyzer
+    suggestions = analyze_playbook_log(stdout)
+
+    # LLM summary (best-effort, non-blocking)
+    try:
+        pipeline = LangChainPipeline()
+        llm_summary = pipeline.summarize_log(stdout)
+    except Exception:
+        llm_summary = None
+
+    # build message
+    msg_lines = [f"AWX job {job_id} webhook received."]
+    if status:
+        msg_lines.append(f"Status: {status}")
+    if suggestions:
+        msg_lines.append("Suggestions (quick analyzer):")
+        msg_lines.extend(suggestions if isinstance(suggestions, list) else [suggestions])
+    if llm_summary:
+        msg_lines.append("LLM summary:")
+        msg_lines.append(llm_summary)
+    if stdout:
+        msg_lines.append("Truncated job stdout:")
+        msg_lines.append(stdout[:2000])  # avoid huge payloads
+
+    message = "\n\n".join(msg_lines)
+    background_tasks.add_task(teams.send_message, message)
+
+    return {"status": "ok", "job_id": job_id}
+
+
 @app.get("/github/roles_search")
 def github_roles_search(q: str):
     gh = GitHubClient(os.getenv("GITHUB_TOKEN"))
